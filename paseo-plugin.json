@@ -1,0 +1,6 @@
+{
+  "id": "paseo-review",
+  "requirements": {
+    "paseo": ">=0.10.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "include": {
+    "repositories": ["acme/api", "acme/web"],
+    "authors": ["Strainy"],
+    "teams": ["platform"],
+    "status": ["ready"],
+    "lastUpdated": "30d"
+  },
+  "exclude": {
+    "authors": ["acme-renovate", "acme-bot"],
+    "status": ["auto-merge", "approved"]
+  },
+  "agentProvider": "claude",
+  "notificationLookback": "7d",
+  "maxDetailFetches": 200,
+  "detailConcurrency": 4,
+  "refreshIntervalMs": 120000,
+  "cacheMaxBytes": 52428800
+}

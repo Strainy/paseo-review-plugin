@@ -1,0 +1,25 @@
+{
+  "name": "paseo-review-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cross-repository GitHub review-request inbox for Paseo",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.10.0",
+    "@getpaseo/plugin": "file:vendor/getpaseo-plugin-0.10.0-7b0cace99.tgz",
+    "@getpaseo/protocol": "0.10.0",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^22.0.0",
+    "@types/react": "~19.2.0",
+    "oxlint": "1.61.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "zod": "^4.4.3"
+  }
+}
