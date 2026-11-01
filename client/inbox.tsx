@@ -6,7 +6,7 @@ import {
 } from "@getpaseo/plugin/client";
 import { useReviewProjects } from "./use-projects";
 import { useReviewList } from "./use-reviews";
-import { removeReviewedPullRequest, updateReviewUnread } from "./reviews";
+import { cancelReviewListQueries, removeReviewedPullRequest, updateReviewUnread } from "./reviews";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, View, type StyleProp, type ViewStyle } from "react-native";
@@ -41,11 +41,6 @@ import {
 /** Fast enough that the per-PR counter visibly moves, cheap enough to leave on. */
 const PROGRESS_POLL_MS = 400;
 const EMPTY_PULL_REQUESTS: PullRequest[] = [];
-
-interface BusyState {
-  id: string;
-  action: ReviewAction;
-}
 
 interface ActivityLine {
   key: string;
@@ -103,7 +98,12 @@ interface ReviewQueueProps {
   log: ActivityLine[];
   loaded: boolean;
   refreshing: boolean;
+  markingAllRead: boolean;
+  canMarkAllRead: boolean;
+  busyActions: Record<string, ReviewAction>;
   onSelect: (id: string) => void;
+  onMarkUnread: (id: string) => void;
+  onMarkAllRead: () => void;
   onFilter: (filter: ReviewQueueFilter) => void;
   onToggleLog: () => void;
   onRefresh: () => void;
@@ -123,7 +123,12 @@ function ReviewQueue({
   log,
   loaded,
   refreshing,
+  markingAllRead,
+  canMarkAllRead,
+  busyActions,
   onSelect,
+  onMarkUnread,
+  onMarkAllRead,
   onFilter,
   onToggleLog,
   onRefresh,
@@ -160,17 +165,26 @@ function ReviewQueue({
           </View>
         </View>
 
-        <View style={styles.filterChips} accessibilityRole="tablist">
-          <ReviewFilterChip
-            filter="unread"
-            selected={filter === "unread"}
-            onSelect={onFilter}
-            styles={styles}
-          />
-          <ReviewFilterChip
-            filter="all"
-            selected={filter === "all"}
-            onSelect={onFilter}
+        <View style={styles.queueFilterRow}>
+          <View style={styles.filterChips} accessibilityRole="tablist">
+            <ReviewFilterChip
+              filter="unread"
+              selected={filter === "unread"}
+              onSelect={onFilter}
+              styles={styles}
+            />
+            <ReviewFilterChip
+              filter="all"
+              selected={filter === "all"}
+              onSelect={onFilter}
+              styles={styles}
+            />
+          </View>
+          <ActionButton
+            label={markingAllRead ? "Marking all as read..." : "Mark all as Read"}
+            variant="ghost"
+            disabled={markingAllRead || !canMarkAllRead}
+            onPress={onMarkAllRead}
             styles={styles}
           />
         </View>
@@ -212,6 +226,8 @@ function ReviewQueue({
                 selected={selectedId === pullRequest.id}
                 now={now}
                 onSelect={onSelect}
+                onMarkUnread={onMarkUnread}
+                unreadDisabled={markingAllRead || busyActions[pullRequest.id] !== undefined}
                 styles={styles}
               />
             ))}
@@ -248,7 +264,10 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [showLog, setShowLog] = useState(false);
   const [filter, setFilter] = useState<ReviewQueueFilter>("unread");
-  const [busy, setBusy] = useState<BusyState | null>(null);
+  const [busyActions, setBusyActions] = useState<Record<string, ReviewAction>>({});
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const markingAllReadRef = useRef(false);
+  const [bulkReadError, setBulkReadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
 
   const { reviews, snapshot, showingCache, unreadCount } = useReviewList(host.id);
@@ -320,7 +339,7 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
 
   const runAction = useCallback(
     async (id: string, action: ReviewAction, operation: () => Promise<void>): Promise<boolean> => {
-      setBusy({ id, action });
+      setBusyActions((current) => ({ ...current, [id]: action }));
       setActionError(null);
       try {
         await operation();
@@ -329,7 +348,12 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
         setActionError({ id, message: messageFrom(error) });
         return false;
       } finally {
-        setBusy((current) => (current?.id === id && current.action === action ? null : current));
+        setBusyActions((current) => {
+          if (current[id] !== action) return current;
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
       }
     },
     [],
@@ -370,14 +394,12 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
     async (pullRequest: PullRequest) => {
       const succeeded = await runAction(pullRequest.id, "approve", async () => {
         await approve({ id: pullRequest.id });
-        await Promise.all([
-          queryClient.cancelQueries({ queryKey: ["reviews"], exact: true }),
-          queryClient.cancelQueries({ queryKey: ["reviews", "cached"], exact: true }),
-        ]);
+        await cancelReviewListQueries(queryClient);
         removeReviewedPullRequest(queryClient, pullRequest.id);
       });
       if (!succeeded) return;
-      setSelectedId(null);
+      // Approval may finish after the user has opened another PR.
+      setSelectedId((current) => (current === pullRequest.id ? null : current));
       refresh();
     },
     [approve, queryClient, refresh, runAction],
@@ -386,20 +408,57 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
   const saveUnread = useCallback(
     async (pullRequest: PullRequest, unread: boolean) => {
       const previous = pullRequest.unread;
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: ["reviews"], exact: true }),
-        queryClient.cancelQueries({ queryKey: ["reviews", "cached"], exact: true }),
-      ]);
+      await cancelReviewListQueries(queryClient);
       updateUnreadCache(pullRequest.id, unread);
       try {
         const saved = await setUnread({ id: pullRequest.id, unread });
+        // A poll can start while the write is pending and capture the old flag.
+        await cancelReviewListQueries(queryClient);
         updateUnreadCache(saved.id, saved.unread);
       } catch (error) {
+        await cancelReviewListQueries(queryClient);
         updateUnreadCache(pullRequest.id, previous);
         throw error;
       }
     },
     [queryClient, setUnread, updateUnreadCache],
+  );
+
+  const markAllRead = useCallback(async () => {
+    if (markingAllReadRef.current) return;
+    markingAllReadRef.current = true;
+    setMarkingAllRead(true);
+    setBulkReadError(null);
+    setActionError(null);
+    // A selected read PR is kept in Unread while reviewing. Explicitly clearing
+    // the queue also releases that selection, even when the unread count is zero.
+    setSelectedId(null);
+    try {
+      const unread = pullRequests.filter((pullRequest) => pullRequest.unread);
+      const results = await Promise.allSettled(
+        unread.map((pullRequest) => saveUnread(pullRequest, false)),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length > 0) {
+        setBulkReadError(
+          `Could not mark ${failures.length} ${failures.length === 1 ? "review" : "reviews"} as read: ${messageFrom(failures[0].reason)}`,
+        );
+      }
+    } finally {
+      markingAllReadRef.current = false;
+      setMarkingAllRead(false);
+    }
+  }, [pullRequests, saveUnread]);
+
+  const markUnread = useCallback(
+    (id: string) => {
+      const pullRequest = pullRequests.find((candidate) => candidate.id === id);
+      if (!pullRequest || pullRequest.unread || markingAllReadRef.current || busyActions[id]) {
+        return;
+      }
+      void runAction(id, "unread", () => saveUnread(pullRequest, true));
+    },
+    [busyActions, pullRequests, runAction, saveUnread],
   );
 
   const saveMapping = useCallback(
@@ -450,7 +509,9 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
     () => activityLines((progress.data?.history ?? []).map(describeEvent).filter(Boolean)),
     [progress.data],
   );
-  const listError = reviews.error ? messageFrom(reviews.error) : (snapshot?.error ?? null);
+  const listError =
+    bulkReadError ?? actionError?.message ??
+    (reviews.error ? messageFrom(reviews.error) : (snapshot?.error ?? null));
   const now = Date.now();
 
   const openSelectedWorkspace = useCallback(() => {
@@ -466,9 +527,8 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
     if (selectedPullRequest) void approvePullRequest(selectedPullRequest);
   }, [approvePullRequest, selectedPullRequest]);
   const markSelectedUnread = useCallback(() => {
-    if (!selectedPullRequest || selectedPullRequest.unread) return;
-    void runAction(selectedPullRequest.id, "unread", () => saveUnread(selectedPullRequest, true));
-  }, [runAction, saveUnread, selectedPullRequest]);
+    if (selectedPullRequest) markUnread(selectedPullRequest.id);
+  }, [markUnread, selectedPullRequest]);
   const mapSelected = useCallback(
     (mapping: RepositoryProjectMapping) => {
       if (selectedPullRequest) void saveMapping(selectedPullRequest, mapping);
@@ -490,7 +550,12 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
       log={log}
       loaded={snapshot !== undefined}
       refreshing={reviews.isFetching}
+      markingAllRead={markingAllRead}
+      canMarkAllRead={unreadCount > 0 || (filter === "unread" && selectedPullRequest !== null)}
+      busyActions={busyActions}
       onSelect={selectPullRequest}
+      onMarkUnread={markUnread}
+      onMarkAllRead={markAllRead}
       onFilter={setFilter}
       onToggleLog={toggleLog}
       onRefresh={refresh}
@@ -508,7 +573,7 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
       detailError={detail.error}
       detailTab={detailTab}
       now={now}
-      busyAction={busy?.id === selectedPullRequest.id ? busy.action : null}
+      busyAction={busyActions[selectedPullRequest.id] ?? (markingAllRead ? "read" : null)}
       actionError={actionError?.id === selectedPullRequest.id ? actionError.message : null}
       projects={projects}
       projectsStatus={projectsStatus}

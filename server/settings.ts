@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -103,7 +104,13 @@ async function readJson(path: string): Promise<unknown | null> {
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 /**
@@ -154,11 +161,19 @@ export async function loadReadState(): Promise<Record<string, string>> {
   return parsed.success ? parsed.data : {};
 }
 
-export async function saveReadAt(id: string, readAt: string | null): Promise<void> {
-  const current = await loadReadState();
-  if (readAt === null) delete current[id];
-  else current[id] = readAt;
-  await writeJson(readStatePath(), current);
+let pendingReadWrite: Promise<void> = Promise.resolve();
+
+export function saveReadAt(id: string, readAt: string | null): Promise<void> {
+  // Selections and bulk actions can arrive together; keep each read-modify-write
+  // intact so saving one PR cannot discard another PR's marker.
+  const write = pendingReadWrite.then(async () => {
+    const current = await loadReadState();
+    if (readAt === null) delete current[id];
+    else current[id] = readAt;
+    await writeJson(readStatePath(), current);
+  });
+  pendingReadWrite = write.catch(() => {});
+  return write;
 }
 
 /**

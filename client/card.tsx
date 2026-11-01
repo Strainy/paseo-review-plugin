@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Modal,
   Pressable,
   ScrollView,
   Text,
+  useWindowDimensions,
   View,
   type AccessibilityState,
   type PressableStateCallbackType,
@@ -211,15 +213,44 @@ export function ReviewQueueRow({
   selected,
   now,
   onSelect,
+  onMarkUnread,
+  unreadDisabled = false,
   styles,
 }: {
   pullRequest: PullRequest;
   selected: boolean;
   now: number;
   onSelect: (id: string) => void;
+  onMarkUnread: (id: string) => void;
+  unreadDisabled?: boolean;
   styles: Styles;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const menuTrigger = useRef<View>(null);
+  const menuItem = useRef<View>(null);
+  const window = useWindowDimensions();
+  const markUnreadDisabled = pullRequest.unread || unreadDisabled;
+  const closeMenu = useCallback(() => {
+    setMenuPosition(null);
+  }, []);
+  const openMenu = useCallback(() => {
+    menuTrigger.current?.measureInWindow((x, y, width, height) => {
+      const below = y + height + 4;
+      setMenuPosition({
+        left: Math.max(8, Math.min(x + width - 160, window.width - 168)),
+        top: below + 44 <= window.height - 8 ? below : Math.max(8, y - 48),
+      });
+    });
+  }, [window.height, window.width]);
+  const markUnread = useCallback(() => {
+    if (markUnreadDisabled) return;
+    closeMenu();
+    onMarkUnread(pullRequest.id);
+  }, [closeMenu, markUnreadDisabled, onMarkUnread, pullRequest.id]);
+  const focusMenu = useCallback(() => {
+    if (!markUnreadDisabled) menuItem.current?.focus();
+  }, [markUnreadDisabled]);
   const hoverIn = useCallback(() => setHovered(true), []);
   const hoverOut = useCallback(() => setHovered(false), []);
   const handlePress = useCallback(() => onSelect(pullRequest.id), [onSelect, pullRequest.id]);
@@ -244,33 +275,83 @@ export function ReviewQueueRow({
     [hovered, selected, styles],
   );
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${pullRequest.unread ? "Unread " : ""}review ${pullRequest.repository} pull request ${pullRequest.number}: ${pullRequest.title}`}
-      accessibilityState={accessibilityState}
-      onHoverIn={hoverIn}
-      onHoverOut={hoverOut}
-      onPress={handlePress}
-      style={resolveStyle}
-    >
-      <ReviewMark styles={styles} />
-      <View style={styles.reviewRowBody}>
-        <View style={styles.reviewRowTop}>
-          <Text style={titleStyle} numberOfLines={2}>
-            {pullRequest.title}
-          </Text>
-          {pullRequest.unread ? <View style={styles.reviewUnreadDot} /> : null}
-          <Text style={styles.reviewAge}>{relativeAge(pullRequest.updatedAt, now)}</Text>
+    <View style={styles.reviewRowContainer}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${pullRequest.unread ? "Unread " : ""}review ${pullRequest.repository} pull request ${pullRequest.number}: ${pullRequest.title}`}
+        accessibilityState={accessibilityState}
+        onHoverIn={hoverIn}
+        onHoverOut={hoverOut}
+        onPress={handlePress}
+        style={resolveStyle}
+      >
+        <ReviewMark styles={styles} />
+        <View style={styles.reviewRowBody}>
+          <View style={styles.reviewRowTop}>
+            <Text style={titleStyle} numberOfLines={2}>
+              {pullRequest.title}
+            </Text>
+            {pullRequest.unread ? <View style={styles.reviewUnreadDot} /> : null}
+            <Text style={styles.reviewAge}>{relativeAge(pullRequest.updatedAt, now)}</Text>
+          </View>
+          <View style={styles.reviewMetaRow}>
+            <Text style={styles.reviewMeta} numberOfLines={1}>
+              {pullRequest.repository}#{pullRequest.number}
+            </Text>
+            <Text style={styles.reviewMeta}>@{pullRequest.author}</Text>
+            {stateLabel ? <Text style={stateStyle}>{stateLabel}</Text> : null}
+          </View>
         </View>
-        <View style={styles.reviewMetaRow}>
-          <Text style={styles.reviewMeta} numberOfLines={1}>
-            {pullRequest.repository}#{pullRequest.number}
-          </Text>
-          <Text style={styles.reviewMeta}>@{pullRequest.author}</Text>
-          {stateLabel ? <Text style={stateStyle}>{stateLabel}</Text> : null}
+      </Pressable>
+      <Pressable
+        ref={menuTrigger}
+        accessibilityRole="button"
+        accessibilityLabel={`Actions for ${pullRequest.repository} pull request ${pullRequest.number}`}
+        accessibilityState={{ expanded: menuPosition !== null }}
+        onPress={openMenu}
+        style={({ pressed }) => [styles.reviewMenuTrigger, pressed ? styles.buttonPressed : null]}
+      >
+        <View style={styles.reviewMenuDots} accessibilityElementsHidden>
+          <View style={styles.reviewMenuDot} />
+          <View style={styles.reviewMenuDot} />
+          <View style={styles.reviewMenuDot} />
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {menuPosition ? (
+        <Modal transparent visible onRequestClose={closeMenu} onShow={focusMenu}>
+          <View style={styles.reviewMenuOverlay}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss review actions"
+              onPress={closeMenu}
+              style={styles.reviewMenuBackdrop}
+            />
+            <View
+              accessibilityRole="menu"
+              accessibilityLabel="Review actions"
+              onAccessibilityEscape={closeMenu}
+              style={[styles.reviewMenu, menuPosition]}
+            >
+              <Pressable
+                ref={menuItem}
+                accessibilityRole="menuitem"
+                accessibilityLabel="Mark unread"
+                accessibilityState={{ disabled: markUnreadDisabled }}
+                disabled={markUnreadDisabled}
+                onPress={markUnread}
+                style={({ pressed }) => [
+                  styles.reviewMenuItem,
+                  pressed ? styles.buttonPressed : null,
+                  markUnreadDisabled ? DISABLED_STYLE : null,
+                ]}
+              >
+                <Text style={styles.buttonText}>Mark unread</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+    </View>
   );
 }
 

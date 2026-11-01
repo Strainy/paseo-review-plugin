@@ -41,6 +41,7 @@ import {
   saveReadAt,
   saveRepositoryMapping,
   settingsPath,
+  type Settings,
 } from "./settings";
 
 const cache = new PullRequestCache();
@@ -114,15 +115,29 @@ function abortAfter(ms: number): AbortSignal {
   return AbortSignal.any([AbortSignal.timeout(ms), shutdown.signal]);
 }
 
-/** Local state attached to each PR after GitHub data is loaded. */
-async function decorate(pullRequests: PullRequest[]): Promise<PullRequest[]> {
+/** Apply local state after GitHub work, including approvals made during the refresh. */
+async function decorate(
+  records: readonly (CacheRecord | null)[],
+  settings: Settings,
+  now: number,
+): Promise<PullRequest[]> {
   const [map, readState] = await Promise.all([loadRepositoryMap(), loadReadState()]);
-  return pullRequests.map((pr) => ({
-    ...pr,
-    repositoryPath: lookupLegacyRepositoryPath(map, pr.repository),
-    projectMapping: lookupRepositoryMapping(map, pr.repository),
-    unread: isUnread(readState, pr.id),
-  }));
+  const pullRequests: PullRequest[] = [];
+  for (const snapshot of records) {
+    if (!snapshot) continue;
+    // Candidates can wait on unrelated detail requests or on the local-state
+    // reads above. Recheck their current record before producing the response.
+    const record = cache.get(snapshot.pullRequest.id) ?? snapshot;
+    const pr = record.pullRequest;
+    if (!includePullRequest(pr, settings, record.viewerApproved, now)) continue;
+    pullRequests.push({
+      ...pr,
+      repositoryPath: lookupLegacyRepositoryPath(map, pr.repository),
+      projectMapping: lookupRepositoryMapping(map, pr.repository),
+      unread: isUnread(readState, pr.id),
+    });
+  }
+  return sortPullRequests(pullRequests);
 }
 
 function newestThreadPerPullRequest(
@@ -173,14 +188,8 @@ async function runList(
     // Deliberately touches nothing but disk: this is the provisional list the
     // surface paints before the authoritative poll returns, so it must not wait
     // on gh — not even to resolve the viewer.
-    const pullRequests = cache
-      .all()
-      .filter((record) =>
-        includePullRequest(record.pullRequest, settings, record.viewerApproved, now),
-      )
-      .map((record) => record.pullRequest);
     return {
-      pullRequests: await decorate(sortPullRequests(pullRequests)),
+      pullRequests: await decorate(cache.all(), settings, now),
       viewer: lastResult?.viewer ?? null,
       stale: true,
       error: null,
@@ -214,14 +223,8 @@ async function runList(
   } catch (error) {
     report({ phase: "done", detail: "Poll failed — showing cached results", current: 0, total: 0 });
     // A failed poll leaves the cached list visible rather than emptying the UI.
-    const cached = cache
-      .all()
-      .filter((record) =>
-        includePullRequest(record.pullRequest, settings, record.viewerApproved, now),
-      )
-      .map((record) => record.pullRequest);
     return {
-      pullRequests: await decorate(sortPullRequests(cached)),
+      pullRequests: await decorate(cache.all(), settings, now),
       viewer: lastResult?.viewer ?? null,
       stale: true,
       error: error instanceof Error ? error.message : String(error),
@@ -242,7 +245,6 @@ async function runList(
   }
   const viewer = latest.size > 0 ? await activeViewerLogin(signal) : null;
   if (viewer) report({ detail: `Active account @${viewer}` });
-  const included: PullRequest[] = [];
   let secondaryLimited = false;
 
   // Newest first so a capped refresh does the work that matters most.
@@ -290,6 +292,17 @@ async function runList(
       try {
         report({ detail: `${id} · fetching details` });
         record = await refresh(entry, cached, viewer, signal, onRetry);
+        const latest = cache.get(id);
+        if (
+          latest !== cached &&
+          latest?.viewerApproved &&
+          latest.pullRequest.headSha === record.pullRequest.headSha &&
+          latest.reviewViewer?.toLowerCase() === viewer?.toLowerCase()
+        ) {
+          // An approval completed after this fetch began. Its result takes
+          // precedence over the older GitHub response for the same head.
+          record = { ...record, viewerApproved: true };
+        }
         await cache.put(record, settings.cacheMaxBytes);
       } catch (error) {
         if (error instanceof GitHubError && error.secondaryRateLimited) {
@@ -310,14 +323,7 @@ async function runList(
     ),
   );
 
-  for (const record of results) {
-    if (!record) continue;
-    if (includePullRequest(record.pullRequest, settings, record.viewerApproved, now)) {
-      included.push(record.pullRequest);
-    }
-  }
-
-  const sorted = sortPullRequests(included);
+  const sorted = await decorate(results, settings, now);
   report({
     phase: "done",
     detail: [
@@ -332,7 +338,7 @@ async function runList(
   });
   lastResult = { pullRequests: sorted, viewer, fetchedAt: new Date(now).toISOString() };
   return {
-    pullRequests: await decorate(sorted),
+    pullRequests: sorted,
     viewer,
     stale: false,
     error: secondaryLimited
@@ -436,12 +442,18 @@ export async function approve(
 ): Promise<RpcOutput<typeof approveReview>> {
   const endpoint = endpoints.get(input.id);
   if (!endpoint) throw new Error(`Unknown pull request: ${input.id}`);
+  const reviewed = cache.get(input.id);
+  const settings = await loadSettings();
   await submitApproval(endpoint, abortAfter(60_000));
   // Approving removes it from the list on the next poll; drop it now so the
   // surface does not show a PR the user just cleared.
   const cached = cache.get(input.id);
-  if (cached) {
-    await cache.put({ ...cached, viewerApproved: true }, (await loadSettings()).cacheMaxBytes);
+  if (
+    cached &&
+    cached.pullRequest.headSha === reviewed?.pullRequest.headSha &&
+    cached.reviewViewer?.toLowerCase() === reviewed?.reviewViewer?.toLowerCase()
+  ) {
+    await cache.put({ ...cached, viewerApproved: true }, settings.cacheMaxBytes);
   }
   return { approved: true };
 }

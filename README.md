@@ -134,6 +134,8 @@ Open **Reviews** in the sidebar, or **⌘K → Open review inbox**.
 | **Overview** / **Diff** | Switches between the PR description and a coloured diff grouped into collapsible file sections.                    |
 | **Approve**             | Submits an approving review, then drops the PR from the queue.                                                     |
 | **Mark unread**         | Returns an opened PR to the unread queue.                                                                          |
+| Row **⋯** menu          | Marks a PR unread without opening it. The action is disabled for unread PRs.                                       |
+| **Mark all as Read**    | Clears the unread queue, including the currently selected review. PRs remain available in All.                    |
 | **Refresh**             | Polls immediately instead of waiting for the interval.                                                             |
 | **Activity**            | Shows the step-by-step record of the last refresh.                                                                 |
 
@@ -183,7 +185,7 @@ Runtime entries and directories define the boundaries enforced by Paseo's compil
 
 Importing from `server/` in client code, or from `client/` in server code, fails compilation. Shared code must work in both runtimes. Runtime modules belong in these directories; the former `.client`, `.server`, and `.shared` filename suffixes do not define boundaries.
 
-`server/filters.test.ts` covers review-state materialization, configuration filters, and persistent unread state. `server/progress.test.ts` covers the refresh phase sequence, single-flight sharing, ordering, and status formatting. `client/reviews.test.ts` covers the shared sidebar/inbox query, read-state rollback, approval counts, and isolation between hosts. `server/settings.test.ts` covers settings and repository mappings; `client/workspace.test.ts` covers review workspace creation and agent configuration; `shared/diff.test.ts` covers diff parsing.
+`server/filters.test.ts` covers review-state materialization, configuration filters, and persistent unread state. `server/progress.test.ts` covers the refresh phase sequence, single-flight sharing, ordering, and status formatting. `server/reviews.test.ts` covers approvals overlapping refreshes. `client/reviews.test.ts` covers the shared sidebar/inbox query, read-state rollback, approval counts, and isolation between hosts. `client/inbox.test.tsx` covers selection during approval, bulk read actions, and failure recovery; `client/card.test.tsx` covers the row action menu. `server/settings.test.ts` covers repository mappings and concurrent read-state persistence; `client/workspace.test.ts` covers review workspace creation and agent configuration; `shared/diff.test.ts` covers diff parsing.
 
 Install the declared development dependencies before typechecking or testing. The `@getpaseo/plugin` dependency uses `vendor/getpaseo-plugin-0.10.0-7b0cace99.tgz`, built from unmodified upstream SDK source at commit `7b0cace991f32aba9e36f714be1921219a091843`. The archive supplies declarations for the custom sidebar API until it reaches a published SDK. Keep it and the lockfile in source control; Paseo supplies the runtime modules.
 

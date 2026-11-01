@@ -24,6 +24,13 @@ interface ReviewUnreadUpdate {
   unread: boolean;
 }
 
+export async function cancelReviewListQueries(client: QueryClient): Promise<void> {
+  await Promise.all([
+    client.cancelQueries({ queryKey: ["reviews"], exact: true }),
+    client.cancelQueries({ queryKey: ["reviews", "cached"], exact: true }),
+  ]);
+}
+
 export function updateReviewUnread(client: QueryClient, { id, unread }: ReviewUnreadUpdate) {
   for (const queryKey of [["reviews"], ["reviews", "cached"]]) {
     client.setQueryData<ReviewListResult>(queryKey, (snapshot) => {
