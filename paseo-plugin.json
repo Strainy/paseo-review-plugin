@@ -1,5 +1,7 @@
 {
   "id": "paseo-review",
+  "name": "Reviews",
+  "description": "Cross-repository GitHub review-request inbox",
   "requirements": {
     "paseo": ">=0.10.0"
   }

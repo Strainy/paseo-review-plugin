@@ -55,7 +55,9 @@ paseo plugin remove paseo-review  # deletes config only, never the source
 
 ## Configure
 
-Settings live at `$PASEO_HOME/plugin-state/paseo-review/settings.json` (`~/.paseo/...` when `PASEO_HOME` is unset). Without a file, the inbox shows every open PR you have been asked to review, including drafts.
+Open **Settings → Plugins → Reviews** (the cog on the plugin's row), the **Settings** button in the inbox header, or **Configure review inbox** in the Command Center. Every option below is editable there: list filters, status toggles, ages, the refresh and cache limits, bot reviewers, and the fallback agent provider. Changes are a draft until you press **Save**, and the inbox refreshes with them straight away.
+
+The screen edits `$PASEO_HOME/plugin-state/paseo-review/settings.json` (`~/.paseo/...` when `PASEO_HOME` is unset), which remains the source of truth, so you can still edit it by hand. A save is rejected if the file changed after the screen loaded it, so a hand edit is never silently overwritten; reload the screen to pick it up. Saving writes the whole document, defaults included. Without a file, the inbox shows every open PR you have been asked to review, including drafts. If the file is not valid, the screen shows the error and offers to replace it with defaults.
 
 ```json
 {
@@ -80,7 +82,7 @@ Settings live at `$PASEO_HOME/plugin-state/paseo-review/settings.json` (`~/.pase
 }
 ```
 
-Copy [`settings.example.json`](settings.example.json) to get started. This plugin does not provide a settings UI.
+To start from a file instead, copy [`settings.example.json`](settings.example.json).
 
 `botReviewers` lists reviewer logins whose approvals count as bot approvals. It is matched case-insensitively and needs no `[bot]` suffix. Changes apply on the next refresh without refetching anything from GitHub.
 
@@ -181,7 +183,7 @@ Runtime entries and directories define the boundaries enforced by Paseo's compil
 
 | Path               | Runs in                                                                   |
 | ------------------ | ------------------------------------------------------------------------- |
-| `index.client.tsx` | The app. Registers the screen, custom sidebar item, and command.          |
+| `index.client.tsx` | The app. Registers the screens, custom sidebar item, and commands.        |
 | `index.server.ts`  | The daemon subprocess. Registers RPC handlers and shutdown cleanup.       |
 | `client/`          | The app. React, the surface, workspace creation, navigation.              |
 | `server/`          | The daemon subprocess. `gh`, the filesystem, filters, cache.              |
@@ -189,7 +191,7 @@ Runtime entries and directories define the boundaries enforced by Paseo's compil
 
 Importing from `server/` in client code, or from `client/` in server code, fails compilation. Shared code must work in both runtimes. Runtime modules belong in these directories; the former `.client`, `.server`, and `.shared` filename suffixes do not define boundaries.
 
-`server/filters.test.ts` covers review-state materialization, configuration filters, and persistent unread state. `server/progress.test.ts` covers the refresh phase sequence, single-flight sharing, ordering, and status formatting. `server/reviews.test.ts` covers approvals overlapping refreshes. `client/reviews.test.ts` covers the shared sidebar/inbox query, read-state rollback, approval counts, and isolation between hosts. `client/inbox.test.tsx` covers selection during approval, bulk read actions, and failure recovery; `client/card.test.tsx` covers the row action menu. `server/settings.test.ts` covers repository mappings and concurrent read-state persistence; `client/workspace.test.ts` covers review workspace creation and agent configuration; `shared/diff.test.ts` covers diff parsing.
+`server/filters.test.ts` covers review-state materialization, configuration filters, and persistent unread state. `server/progress.test.ts` covers the refresh phase sequence, single-flight sharing, ordering, and status formatting. `server/reviews.test.ts` covers approvals overlapping refreshes. `client/reviews.test.ts` covers the shared sidebar/inbox query, read-state rollback, approval counts, and isolation between hosts. `client/inbox.test.tsx` covers selection during approval, bulk read actions, and failure recovery; `client/card.test.tsx` covers the row action menu. `server/settings.test.ts` covers repository mappings, concurrent read-state persistence, and revision-checked settings saves; `client/settings.test.tsx` covers the settings editor's save, validation, and conflict handling; `client/workspace.test.ts` covers review workspace creation and agent configuration; `shared/diff.test.ts` covers diff parsing.
 
 Install the declared development dependencies before typechecking or testing. The `@getpaseo/plugin` dependency uses `vendor/getpaseo-plugin-0.10.0-7b0cace99.tgz`, built from unmodified upstream SDK source at commit `7b0cace991f32aba9e36f714be1921219a091843`. The archive supplies declarations for the custom sidebar API until it reaches a published SDK. Keep it and the lockfile in source control; Paseo supplies the runtime modules.
 

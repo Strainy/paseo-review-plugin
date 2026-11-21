@@ -8,6 +8,7 @@ import {
   readReviewSettings,
   setUnread,
   stopReviews,
+  writeReviewSettings,
 } from "./server/reviews";
 import {
   approveReview,
@@ -15,9 +16,9 @@ import {
   mapRepository,
   pullRequestDetail,
   readProgress,
-  readSettings,
   setPullRequestUnread,
 } from "./shared/reviews";
+import { readSettings, writeSettings } from "./shared/settings";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(listReviews, list);
@@ -27,6 +28,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(pullRequestDetail, detail);
   server.handle(mapRepository, mapRepositoryProject);
   server.handle(readSettings, readReviewSettings);
+  server.handle(writeSettings, writeReviewSettings);
 
   return () => {
     stopReviews();

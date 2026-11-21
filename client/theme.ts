@@ -99,6 +99,24 @@ export function createStyles(theme: Theme, compact: boolean) {
     filterChipText: { color: colors.foregroundMuted, fontSize: 12, lineHeight: 16 },
     filterChipTextSelected: { color: colors.foreground, fontWeight: "500" as const },
 
+    optionChips: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      justifyContent: "flex-end" as const,
+      gap: 6,
+    },
+    optionChip: {
+      minHeight: 28,
+      justifyContent: "center" as const,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: borderStrong,
+    },
+    optionChipSelected: { borderColor: colors.accent, backgroundColor: accentSubtle },
+    optionChipText: { color: colors.foregroundMuted, fontSize: 12, lineHeight: 16 },
+    optionChipTextSelected: { color: colors.foreground, fontWeight: "500" as const },
+
     statusBlock: { gap: 6 },
     statusRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
     status: { flex: 1, color: colors.foregroundMuted, fontSize: 11.5, lineHeight: 16 },

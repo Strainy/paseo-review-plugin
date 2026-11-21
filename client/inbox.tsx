@@ -107,6 +107,8 @@ interface ReviewQueueProps {
   onFilter: (filter: ReviewQueueFilter) => void;
   onToggleLog: () => void;
   onRefresh: () => void;
+  /** Absent on apps without plugin settings screens. */
+  onOpenSettings?: () => void;
   styles: Styles;
 }
 
@@ -132,6 +134,7 @@ function ReviewQueue({
   onFilter,
   onToggleLog,
   onRefresh,
+  onOpenSettings,
   styles,
 }: ReviewQueueProps) {
   const progressStyle = useMemo<StyleProp<ViewStyle>>(
@@ -162,6 +165,14 @@ function ReviewQueue({
               onPress={onRefresh}
               styles={styles}
             />
+            {onOpenSettings ? (
+              <ActionButton
+                label="Settings"
+                variant="ghost"
+                onPress={onOpenSettings}
+                styles={styles}
+              />
+            ) : null}
           </View>
         </View>
 
@@ -249,7 +260,13 @@ function ReviewQueue({
 
 // The surface intentionally keeps query lifecycles and their user-visible states together.
 // oxlint-disable-next-line complexity
-export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenProps) {
+export function ReviewInbox({
+  theme,
+  layout,
+  navigation,
+  host,
+  onOpenSettings,
+}: PluginScreenProps & { onOpenSettings?: () => void }) {
   const styles = useMemo(() => createStyles(theme, layout.compact), [theme, layout.compact]);
   const fetchProgress = useRpc(readProgress);
   const fetchDetail = useRpc(pullRequestDetail);
@@ -559,6 +576,7 @@ export function ReviewInbox({ theme, layout, navigation, host }: PluginScreenPro
       onFilter={setFilter}
       onToggleLog={toggleLog}
       onRefresh={refresh}
+      onOpenSettings={onOpenSettings}
       styles={styles}
     />
   );

@@ -131,13 +131,3 @@ export const mapRepository = defineRpc({
   input: z.object({ repository: z.string(), mapping: RepositoryProjectMappingSchema }),
   output: z.object({ repository: z.string(), mapping: RepositoryProjectMappingSchema }),
 });
-
-export const readSettings = defineRpc({
-  name: "reviews.settings.read",
-  input: z.object({}),
-  output: z.object({
-    path: z.string(),
-    /** Null when no settings file exists yet. */
-    contents: z.string().nullable(),
-  }),
-});

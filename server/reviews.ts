@@ -30,6 +30,7 @@ import type {
   RefreshProgress,
   setPullRequestUnread,
 } from "../shared/reviews";
+import type { readSettings, writeSettings } from "../shared/settings";
 import {
   isUnread,
   lastUpdatedCutoff,
@@ -38,10 +39,10 @@ import {
   loadSettings,
   lookupLegacyRepositoryPath,
   lookupRepositoryMapping,
-  readSettingsFile,
+  readSettingsSnapshot,
   saveReadAt,
   saveRepositoryMapping,
-  settingsPath,
+  saveSettings,
   type Settings,
 } from "./settings";
 
@@ -497,6 +498,12 @@ export async function mapRepositoryProject(
   return { repository, mapping };
 }
 
-export async function readReviewSettings(): Promise<{ path: string; contents: string | null }> {
-  return { path: settingsPath(), contents: await readSettingsFile() };
+export async function readReviewSettings(): Promise<RpcOutput<typeof readSettings>> {
+  return await readSettingsSnapshot();
+}
+
+export async function writeReviewSettings(
+  input: RpcInput<typeof writeSettings>,
+): Promise<RpcOutput<typeof writeSettings>> {
+  return await saveSettings(input.revision, input.values);
 }

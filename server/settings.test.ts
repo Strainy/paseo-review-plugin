@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,10 @@ import {
   loadReadState,
   lookupLegacyRepositoryPath,
   lookupRepositoryMapping,
+  readSettingsSnapshot,
   saveReadAt,
+  saveSettings,
+  settingsPath,
   stateDirectory,
   type RepositoryMap,
 } from "./settings";
@@ -73,5 +76,63 @@ describe("read state persistence", () => {
     await rm(path);
     await saveReadAt("acme/api#2", "read");
     expect(await loadReadState()).toEqual({ "acme/api#2": "read" });
+  });
+});
+
+describe("settings file editing", () => {
+  let directory: string;
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "paseo-settings-"));
+    vi.stubEnv("PASEO_HOME", directory);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it("saves only against the revision the editor loaded", async () => {
+    const initial = await readSettingsSnapshot();
+    expect(initial).toMatchObject({ status: "ready", revision: "missing" });
+    if (initial.status !== "ready") throw new Error("expected defaults");
+
+    const values = { ...initial.values, botReviewers: ["lpu-review-approver"] };
+    const saved = await saveSettings(initial.revision, values);
+    expect(saved).toMatchObject({ status: "saved", values: { botReviewers: ["lpu-review-approver"] } });
+    const reloaded = await readSettingsSnapshot();
+    expect(reloaded).toMatchObject({ status: "ready", values });
+    expect(saved.status === "saved" && saved.revision).toBe(reloaded.revision);
+
+    // A second editor still holding the original revision must not clobber it.
+    const contents = await readFile(settingsPath(), "utf8");
+    expect(await saveSettings(initial.revision, initial.values)).toMatchObject({
+      status: "conflict",
+    });
+    expect(await readFile(settingsPath(), "utf8")).toBe(contents);
+  });
+
+  it("rejects an invalid document without touching the file", async () => {
+    const initial = await readSettingsSnapshot();
+    if (initial.status !== "ready") throw new Error("expected defaults");
+    const values = { ...initial.values, include: { ...initial.values.include, lastUpdated: "soon" } };
+
+    const result = await saveSettings(initial.revision, values);
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(result.status === "invalid" && result.error).toMatch(/^include\.lastUpdated: /);
+    expect((await readSettingsSnapshot()).revision).toBe("missing");
+  });
+
+  it("reports an unparseable file and lets an explicit save replace it", async () => {
+    await mkdir(stateDirectory(), { recursive: true });
+    await writeFile(settingsPath(), "{ not json", "utf8");
+
+    const broken = await readSettingsSnapshot();
+    expect(broken).toMatchObject({ status: "invalid", path: settingsPath() });
+    expect(await saveSettings(broken.revision, {})).toMatchObject({
+      status: "saved",
+      values: { refreshIntervalMs: 120_000 },
+    });
+    expect(await readSettingsSnapshot()).toMatchObject({ status: "ready" });
   });
 });

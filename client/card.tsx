@@ -129,7 +129,7 @@ interface SurfacePressableProps {
   children: ReactNode;
 }
 
-function SurfacePressable({
+export function SurfacePressable({
   style,
   hoveredStyle,
   pressedStyle,
