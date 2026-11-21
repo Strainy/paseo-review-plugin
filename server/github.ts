@@ -36,7 +36,8 @@ export interface RestPullRequest {
 }
 
 export interface RestReview {
-  user: { login: string } | null;
+  /** `type` is `"Bot"` for GitHub App accounts such as `renovate[bot]`. */
+  user: { login: string; type?: string } | null;
   state: string;
   commit_id: string;
   submitted_at: string | null;

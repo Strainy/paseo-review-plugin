@@ -67,7 +67,7 @@ describe("review row actions", () => {
     if (renderer) await act(async () => renderer.unmount());
   });
 
-  async function mount({ unread = false, unreadDisabled = false } = {}) {
+  async function mount({ unread = false, unreadDisabled = false, reviewState = "unreviewed" } = {}) {
     const pullRequest = PullRequestSchema.parse({
       id: "acme/api#1",
       repository: "acme/api",
@@ -82,7 +82,7 @@ describe("review row actions", () => {
       headSha: "abc123",
       requestedTeams: [],
       updatedAt: "2026-10-01T00:00:00Z",
-      reviewState: "unreviewed",
+      reviewState,
       repositoryPath: null,
       unread,
     });
@@ -171,6 +171,17 @@ describe("review row actions", () => {
       expect(onSelect).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    { reviewState: "approved", label: "Approved", color: "#00ff00" },
+    { reviewState: "bot-approved", label: "Bot approved", color: "#ffff00" },
+  ])("labels $reviewState as $label in its own color", async ({ reviewState, label, color }) => {
+    await mount({ reviewState });
+    const text = renderer.root.find(
+      (node) => node.type === "text" && node.props.children === label,
+    );
+    expect(Object.assign({}, ...text.props.style).color).toBe(color);
+  });
 
   it("opens above a trigger near the bottom so the menu remains on screen", async () => {
     triggerY = 450;

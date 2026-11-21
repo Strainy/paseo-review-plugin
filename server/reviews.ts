@@ -1,10 +1,11 @@
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
-import { PullRequestCache, type CacheRecord } from "./cache";
+import { PullRequestCache, REVIEW_STATE_VERSION, type CacheRecord } from "./cache";
 import {
   includePullRequest,
   materializeReviewState,
   matchesNotificationRepository,
   requestedTeamNames,
+  resolveReviewState,
 } from "./filters";
 import {
   GitHubError,
@@ -128,7 +129,14 @@ async function decorate(
     // Candidates can wait on unrelated detail requests or on the local-state
     // reads above. Recheck their current record before producing the response.
     const record = cache.get(snapshot.pullRequest.id) ?? snapshot;
-    const pr = record.pullRequest;
+    const pr = {
+      ...record.pullRequest,
+      reviewState: resolveReviewState(
+        record.pullRequest.reviewState,
+        record.approvers,
+        settings.botReviewers,
+      ),
+    };
     if (!includePullRequest(pr, settings, record.viewerApproved, now)) continue;
     pullRequests.push({
       ...pr,
@@ -263,6 +271,7 @@ async function runList(
       cached !== null &&
       cached.reviewsUpdatedAt !== null &&
       threadUpdatedAt <= Date.parse(cached.reviewsUpdatedAt) &&
+      cached.reviewStateVersion === REVIEW_STATE_VERSION &&
       (viewer === null || cached.reviewViewer?.toLowerCase() === viewer.toLowerCase());
     return { id, entry, index, cached, fresh: detailsFresh && reviewsFresh };
   });
@@ -386,6 +395,8 @@ async function refresh(
     reviewsUpdatedAt: entry.thread.updated_at,
     reviewViewer: viewer,
     viewerApproved: decision.viewerApproved,
+    approvers: decision.approvers,
+    reviewStateVersion: REVIEW_STATE_VERSION,
   };
 }
 

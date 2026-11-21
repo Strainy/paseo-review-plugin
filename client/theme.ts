@@ -39,6 +39,8 @@ export function createStyles(theme: Theme, compact: boolean) {
   const borderStrong = mix(colors.surface0, colors.foreground, 0.24);
   const accentSubtle = mix(colors.surface0, colors.accent, 0.11);
   const dangerSubtle = mix(colors.surface0, colors.statusDanger, 0.11);
+  const successSubtle = mix(colors.surface0, colors.statusSuccess, 0.11);
+  const warningSubtle = mix(colors.surface0, colors.statusWarning, 0.11);
   const gutter = compact ? 14 : 20;
 
   return {
@@ -242,6 +244,8 @@ export function createStyles(theme: Theme, compact: boolean) {
     },
     reviewMeta: { color: colors.foregroundMuted, fontSize: 11.5, lineHeight: 16 },
     reviewState: { color: colors.accent, fontSize: 11, lineHeight: 16 },
+    reviewStateSuccess: { color: colors.statusSuccess },
+    reviewStateWarning: { color: colors.statusWarning },
     reviewStateDanger: { color: colors.statusDanger },
     reviewMenuTrigger: {
       position: "absolute" as const,
@@ -342,8 +346,12 @@ export function createStyles(theme: Theme, compact: boolean) {
       borderRadius: 999,
       backgroundColor: accentSubtle,
     },
+    statusBadgeSuccess: { backgroundColor: successSubtle },
+    statusBadgeWarning: { backgroundColor: warningSubtle },
     statusBadgeDanger: { backgroundColor: dangerSubtle },
     statusBadgeText: { color: colors.accent, fontSize: 11.5, fontWeight: "500" as const },
+    statusBadgeSuccessText: { color: colors.statusSuccess },
+    statusBadgeWarningText: { color: colors.statusWarning },
     statusBadgeDangerText: { color: colors.statusDanger },
 
     actionPanel: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { input as ZodInput } from "zod";
-import { includePullRequest, materializeReviewState } from "./filters";
+import { includePullRequest, materializeReviewState, resolveReviewState } from "./filters";
 import { SettingsSchema, isUnread, parseLastUpdated, type Settings } from "./settings";
 import type { PullRequest } from "../shared/reviews";
 
@@ -87,6 +87,7 @@ describe("materializeReviewState", () => {
     ];
     expect(materializeReviewState(reviews, "kim", "new-sha")).toEqual({
       state: "approved",
+      approvers: [{ login: "kim", bot: false }],
       viewerApproved: false,
     });
   });
@@ -96,6 +97,52 @@ describe("materializeReviewState", () => {
       { user: { login: "Kim" }, state: "APPROVED", commit_id: "abc123", submitted_at: null },
     ];
     expect(materializeReviewState(reviews, "kim", "abc123").viewerApproved).toBe(true);
+  });
+});
+
+describe("bot approvals", () => {
+  function approval(user: { login: string; type?: string }) {
+    return { user, state: "APPROVED", commit_id: "abc123", submitted_at: null };
+  }
+
+  function resolve(users: { login: string; type?: string }[], botReviewers: string[] = []) {
+    const decision = materializeReviewState(users.map(approval), null, "abc123");
+    return resolveReviewState(decision.state, decision.approvers, botReviewers);
+  }
+
+  it.each([{ login: "renovate[bot]" }, { login: "acme-approver", type: "Bot" }])(
+    "treats a GitHub bot account as a bot approver (%j)",
+    (user) => {
+      expect(resolve([user])).toBe("bot-approved");
+    },
+  );
+
+  it("treats a configured machine user as a bot approver", () => {
+    const user = { login: "LPU-Review-Approver", type: "User" };
+    expect(resolve([user])).toBe("approved");
+    expect(resolve([user], ["lpu-review-approver"])).toBe("bot-approved");
+  });
+
+  it("lets a human approval win over a bot approval", () => {
+    const users = [
+      { login: "kim", type: "User" },
+      { login: "lpu-review-approver", type: "User" },
+    ];
+    expect(resolve(users, ["lpu-review-approver"])).toBe("approved");
+  });
+
+  it("leaves changes requested ahead of a bot approval", () => {
+    const reviews = [
+      approval({ login: "renovate[bot]", type: "Bot" }),
+      {
+        user: { login: "kim" },
+        state: "CHANGES_REQUESTED",
+        commit_id: "abc123",
+        submitted_at: null,
+      },
+    ];
+    const decision = materializeReviewState(reviews, null, "abc123");
+    expect(resolveReviewState(decision.state, decision.approvers, [])).toBe("changes-requested");
   });
 });
 

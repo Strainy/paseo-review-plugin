@@ -46,19 +46,59 @@ export function relativeAge(iso: string, now: number): string {
   return `${Math.round(days / 7)}w`;
 }
 
-function reviewStateLabel(pullRequest: PullRequest): string | null {
-  if (pullRequest.isDraft) return "Draft";
-  if (pullRequest.reviewState === "changes-requested") return "Changes requested";
-  if (pullRequest.reviewState === "approved") return "Approved";
-  if (!pullRequest.projectMapping) return "Choose project";
+type StatusTone = "neutral" | "success" | "warning" | "danger";
+
+interface ReviewStatus {
+  label: string;
+  tone: StatusTone;
+}
+
+function reviewDecision(pullRequest: PullRequest): ReviewStatus | null {
+  if (pullRequest.isDraft) return { label: "Draft", tone: "neutral" };
+  switch (pullRequest.reviewState) {
+    case "changes-requested":
+      return { label: "Changes requested", tone: "danger" };
+    case "approved":
+      return { label: "Approved", tone: "success" };
+    case "bot-approved":
+      return { label: "Bot approved", tone: "warning" };
+    default:
+      return null;
+  }
+}
+
+/** The row only labels a PR that has a decision or still needs a project. */
+function rowStatus(pullRequest: PullRequest): ReviewStatus | null {
+  const decision = reviewDecision(pullRequest);
+  if (decision || pullRequest.projectMapping) return decision;
+  return { label: "Choose project", tone: "neutral" };
+}
+
+function detailStatus(pullRequest: PullRequest): ReviewStatus {
+  return reviewDecision(pullRequest) ?? { label: "Open", tone: "neutral" };
+}
+
+function rowToneStyle(styles: Styles, tone: StatusTone): StyleProp<TextStyle> {
+  if (tone === "success") return styles.reviewStateSuccess;
+  if (tone === "warning") return styles.reviewStateWarning;
+  if (tone === "danger") return styles.reviewStateDanger;
   return null;
 }
 
-function reviewStatusLabel(pullRequest: PullRequest): string {
-  if (pullRequest.isDraft) return "Draft";
-  if (pullRequest.reviewState === "changes-requested") return "Changes requested";
-  if (pullRequest.reviewState === "approved") return "Approved";
-  return "Open";
+function badgeToneStyles(
+  styles: Styles,
+  tone: StatusTone,
+): { badge: StyleProp<ViewStyle>; text: StyleProp<TextStyle> } {
+  if (tone === "success") {
+    return { badge: styles.statusBadgeSuccess, text: styles.statusBadgeSuccessText };
+  }
+  if (tone === "warning") {
+    return { badge: styles.statusBadgeWarning, text: styles.statusBadgeWarningText };
+  }
+  if (tone === "danger") {
+    return { badge: styles.statusBadgeDanger, text: styles.statusBadgeDangerText };
+  }
+  return { badge: null, text: null };
 }
 
 function errorMessage(error: unknown): string | null {
@@ -254,12 +294,13 @@ export function ReviewQueueRow({
   const hoverIn = useCallback(() => setHovered(true), []);
   const hoverOut = useCallback(() => setHovered(false), []);
   const handlePress = useCallback(() => onSelect(pullRequest.id), [onSelect, pullRequest.id]);
-  const stateLabel = reviewStateLabel(pullRequest);
-  const danger = pullRequest.reviewState === "changes-requested";
+  const reviewStatus = rowStatus(pullRequest);
+  const stateLabel = reviewStatus?.label ?? null;
+  const stateTone = reviewStatus?.tone ?? "neutral";
   const accessibilityState = useMemo(() => ({ selected }), [selected]);
   const stateStyle = useMemo<StyleProp<TextStyle>>(
-    () => [styles.reviewState, danger ? styles.reviewStateDanger : null],
-    [danger, styles],
+    () => [styles.reviewState, rowToneStyle(styles, stateTone)],
+    [stateTone, styles],
   );
   const titleStyle = useMemo<StyleProp<TextStyle>>(
     () => [styles.reviewTitle, pullRequest.unread ? styles.reviewTitleUnread : null],
@@ -665,15 +706,14 @@ function DetailHero({
   now,
   styles,
 }: Pick<ReviewDetailProps, "detail" | "now" | "pullRequest" | "styles">) {
-  const statusDanger = pullRequest.reviewState === "changes-requested";
-  const statusStyle = useMemo<StyleProp<ViewStyle>>(
-    () => [styles.statusBadge, statusDanger ? styles.statusBadgeDanger : null],
-    [statusDanger, styles],
-  );
-  const statusTextStyle = useMemo<StyleProp<TextStyle>>(
-    () => [styles.statusBadgeText, statusDanger ? styles.statusBadgeDangerText : null],
-    [statusDanger, styles],
-  );
+  const status = detailStatus(pullRequest);
+  const { statusStyle, statusTextStyle } = useMemo(() => {
+    const tone = badgeToneStyles(styles, status.tone);
+    return {
+      statusStyle: [styles.statusBadge, tone.badge] as StyleProp<ViewStyle>,
+      statusTextStyle: [styles.statusBadgeText, tone.text] as StyleProp<TextStyle>,
+    };
+  }, [status.tone, styles]);
   const additionsStyle = useMemo<StyleProp<TextStyle>>(
     () => [styles.stat, styles.additions],
     [styles],
@@ -690,7 +730,7 @@ function DetailHero({
   return (
     <View style={styles.detailHero}>
       <View style={statusStyle}>
-        <Text style={statusTextStyle}>{reviewStatusLabel(pullRequest)}</Text>
+        <Text style={statusTextStyle}>{status.label}</Text>
       </View>
       <Text style={styles.detailTitle}>{pullRequest.title}</Text>
       <Text style={styles.detailByline}>

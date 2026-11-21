@@ -21,13 +21,26 @@ export function requestedTeamNames(pr: RestPullRequest, repository: string): str
   );
 }
 
+export interface Approver {
+  login: string;
+  /** GitHub's own signal: a GitHub App account or a `[bot]` login. */
+  bot: boolean;
+}
+
 export interface ReviewDecision {
+  /** `approved` here still includes bot approvals; see `resolveReviewState`. */
   state: PullRequest["reviewState"];
+  /** Reviewers whose standing decision is an approval. */
+  approvers: Approver[];
   viewerApproved: boolean;
 }
 
 function appliesToHead(commitId: string, headSha: string): boolean {
   return !commitId || !headSha || commitId === headSha;
+}
+
+function isGitHubBot(user: NonNullable<RestReview["user"]>): boolean {
+  return user.type?.toLowerCase() === "bot" || /\[bot\]$/i.test(user.login.trim());
 }
 
 /**
@@ -40,33 +53,56 @@ export function materializeReviewState(
   viewer: string | null,
   headSha: string,
 ): ReviewDecision {
-  const decisions = new Map<string, { state: string; commitId: string }>();
+  const decisions = new Map<string, { state: string; commitId: string; approver: Approver }>();
   for (const review of reviews) {
-    const login = review.user?.login?.trim().toLowerCase();
-    if (!login) continue;
+    const user = review.user;
+    const login = user?.login?.trim().toLowerCase();
+    if (!user || !login) continue;
     const state = review.state?.toUpperCase();
     if (state === "APPROVED" || state === "CHANGES_REQUESTED") {
-      decisions.set(login, { state, commitId: review.commit_id });
+      decisions.set(login, {
+        state,
+        commitId: review.commit_id,
+        approver: { login: user.login.trim(), bot: isGitHubBot(user) },
+      });
     } else if (state === "DISMISSED") {
       decisions.delete(login);
     }
   }
 
-  let state: PullRequest["reviewState"] = "unreviewed";
-  for (const decision of decisions.values()) {
-    if (decision.state === "CHANGES_REQUESTED") {
-      state = "changes-requested";
-      break;
-    }
-    if (decision.state === "APPROVED") state = "approved";
+  const standing = [...decisions.values()];
+  const approvals = standing.filter((decision) => decision.state === "APPROVED");
+  let state: PullRequest["reviewState"] = approvals.length > 0 ? "approved" : "unreviewed";
+  if (standing.some((decision) => decision.state === "CHANGES_REQUESTED")) {
+    state = "changes-requested";
   }
 
   const viewerDecision = viewer ? decisions.get(viewer.trim().toLowerCase()) : undefined;
   return {
     state,
+    approvers: approvals.map((decision) => decision.approver),
     viewerApproved:
       viewerDecision?.state === "APPROVED" && appliesToHead(viewerDecision.commitId, headSha),
   };
+}
+
+/**
+ * An approval is a bot approval only when every approver is a bot, either by
+ * GitHub's account type or by `botReviewers`, which covers machine users that
+ * GitHub reports as ordinary accounts. One human approval makes it `approved`.
+ * Applied when the list is built so a settings change needs no refetch.
+ */
+export function resolveReviewState(
+  state: PullRequest["reviewState"],
+  approvers: readonly Approver[],
+  botReviewers: readonly string[],
+): PullRequest["reviewState"] {
+  if (state !== "approved" || approvers.length === 0) return state;
+  const configured = new Set(botReviewers.map(canonicalAuthor));
+  const human = approvers.some(
+    (approver) => !approver.bot && !configured.has(canonicalAuthor(approver.login)),
+  );
+  return human ? "approved" : "bot-approved";
 }
 
 export function matchesNotificationRepository(repository: string, settings: Settings): boolean {
@@ -90,6 +126,8 @@ function matchesAnyStatus(pr: PullRequest, statuses: readonly string[]): boolean
         return isOpen && pr.autoMerge;
       case "approved":
         return pr.reviewState === "approved";
+      case "bot-approved":
+        return pr.reviewState === "bot-approved";
       case "changes-requested":
         return pr.reviewState === "changes-requested";
       case "unreviewed":

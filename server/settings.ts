@@ -11,6 +11,7 @@ const STATUSES = [
   "ready",
   "auto-merge",
   "approved",
+  "bot-approved",
   "changes-requested",
   "unreviewed",
   "merged",
@@ -32,6 +33,11 @@ export const SettingsSchema = z.object({
   exclude: FiltersSchema,
   /** Poll interval shared by the inbox and sidebar. */
   refreshIntervalMs: z.number().int().min(30_000).default(120_000),
+  /**
+   * Reviewer logins whose approvals count as bot approvals, for machine users
+   * GitHub reports as ordinary accounts. `[bot]` accounts need no entry.
+   */
+  botReviewers: z.array(z.string()).default([]),
   /** Fallback provider when the project has no previous agent configuration. */
   agentProvider: z.string().default("claude"),
   /**

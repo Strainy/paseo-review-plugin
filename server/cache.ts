@@ -4,6 +4,13 @@ import { z } from "zod";
 import { PullRequestSchema, type PullRequest } from "../shared/reviews";
 import { cachePath } from "./settings";
 
+/**
+ * Bump when the cached review fields change meaning, so decisions cached under
+ * older rules are refetched rather than trusted. Version 3 records approvers,
+ * which bot-approval classification needs.
+ */
+export const REVIEW_STATE_VERSION = 3;
+
 const RecordSchema = z.object({
   pullRequest: PullRequestSchema,
   /** Notification timestamp the details were fetched against. */
@@ -12,6 +19,9 @@ const RecordSchema = z.object({
   reviewsUpdatedAt: z.string().nullable(),
   reviewViewer: z.string().nullable(),
   viewerApproved: z.boolean(),
+  /** Reviewers whose standing decision is an approval, for bot classification. */
+  approvers: z.array(z.object({ login: z.string(), bot: z.boolean() })).default([]),
+  reviewStateVersion: z.number().int().default(1),
 });
 
 export type CacheRecord = z.infer<typeof RecordSchema>;

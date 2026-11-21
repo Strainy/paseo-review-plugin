@@ -1,7 +1,13 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
-export const REVIEW_STATES = ["approved", "changes-requested", "unreviewed"] as const;
+/** `bot-approved` means every approval on the PR came from a bot account. */
+export const REVIEW_STATES = [
+  "approved",
+  "bot-approved",
+  "changes-requested",
+  "unreviewed",
+] as const;
 
 export const RepositoryProjectMappingSchema = z.object({
   projectKey: z.string(),

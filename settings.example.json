@@ -10,6 +10,7 @@
     "authors": ["acme-renovate", "acme-bot"],
     "status": ["auto-merge", "approved"]
   },
+  "botReviewers": ["acme-review-approver"],
   "agentProvider": "claude",
   "notificationLookback": "7d",
   "maxDetailFetches": 200,

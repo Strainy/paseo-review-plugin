@@ -70,6 +70,7 @@ Settings live at `$PASEO_HOME/plugin-state/paseo-review/settings.json` (`~/.pase
     "authors": ["acme-renovate", "acme-bot"],
     "status": ["auto-merge", "approved"]
   },
+  "botReviewers": ["acme-review-approver"],
   "agentProvider": "claude",
   "notificationLookback": "7d",
   "maxDetailFetches": 200,
@@ -80,6 +81,8 @@ Settings live at `$PASEO_HOME/plugin-state/paseo-review/settings.json` (`~/.pase
 ```
 
 Copy [`settings.example.json`](settings.example.json) to get started. This plugin does not provide a settings UI.
+
+`botReviewers` lists reviewer logins whose approvals count as bot approvals. It is matched case-insensitively and needs no `[bot]` suffix. Changes apply on the next refresh without refetching anything from GitHub.
 
 `agentProvider` is the fallback used when the selected project has no previous agents. It accepts either a provider such as `claude` or an explicit provider/model such as `codex/gpt-5.5`. A provider-only value resolves to that provider's default model on the selected project host.
 
@@ -101,11 +104,12 @@ Within `include`, **authors and teams are additive**: a PR matches if its author
 
 `exclude` accepts the same keys, and **an exclusion always beats an inclusion**. A bot slug such as `acme-renovate` matches GitHub's `acme-renovate[bot]`. A bare team slug inherits the organization from the PR's own repository; `org/team-slug` is also accepted.
 
-`status` values are ORed. Accepted: `open`, `draft`, `ready`, `auto-merge`, `approved`, `changes-requested`, `unreviewed`, `merged`, `closed`.
+`status` values are ORed. Accepted: `open`, `draft`, `ready`, `auto-merge`, `approved`, `bot-approved`, `changes-requested`, `unreviewed`, `merged`, `closed`.
 
 - `ready` means open and not a draft, regardless of review state.
 - `auto-merge` means GitHub's `auto_merge` field is set.
 - `approved` and `changes-requested` are materialized from each reviewer's latest submitted decision, with changes-requested taking precedence. Comment-only and dismissed reviews carry no decision, so a PR without one is `unreviewed`.
+- `bot-approved` means every approval came from a bot: a GitHub App account such as `renovate[bot]`, or a login listed in `botReviewers`. Machine users (ordinary accounts used for automation) look like people to GitHub, so list them there. One human approval makes the PR `approved` instead. The two are disjoint: `approved` does not match a bot-only approval. The inbox shows `Approved` in green and `Bot approved` in orange.
 - Submitted approvals remain visible after a new push. Your own approval clears the PR only while it applies to the current head, so a new push returns it to the queue without erasing the approval state.
 - With no `status` configured, the inbox shows all open PRs including drafts, and omits merged and closed ones.
 - `review-required` is unsupported: branch-protection requirements are not exposed by these responses.
